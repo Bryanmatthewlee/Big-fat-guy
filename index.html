@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Fat Guy on a Chair | Cozy Corner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none; /* avoid accidental text selection on drag */
+        }
+
+        body {
+            background: linear-gradient(145deg, #b87c4f 0%, #8b5a2b 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', 'Comic Neue', 'Segoe UI Emoji', system-ui, -apple-system, sans-serif;
+            padding: 20px;
+            cursor: default;
+        }
+
+        /* main scene container */
+        .scene {
+            background: #ecd9c6;
+            background-image: radial-gradient(circle at 20% 40%, rgba(255,245,225,0.6) 2%, transparent 2.5%),
+                              radial-gradient(circle at 75% 85%, rgba(200,170,140,0.3) 1.5%, transparent 2%);
+            background-size: 40px 40px, 30px 30px;
+            border-radius: 72px 72px 48px 48px;
+            box-shadow: 0 25px 40px rgba(0,0,0,0.4), inset 0 1px 4px rgba(255,255,200,0.8);
+            padding: 30px 40px 40px 40px;
+            transition: all 0.2s ease;
+        }
+
+        canvas {
+            display: block;
+            margin: 0 auto;
+            border-radius: 48px;
+            box-shadow: 0 12px 28px rgba(0,0,0,0.3);
+            background-color: #f9eedb;
+            cursor: pointer;
+            transition: transform 0.2s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+        }
+        canvas:active {
+            transform: scale(0.98);
+        }
+
+        /* little caption & vibe */
+        .caption {
+            text-align: center;
+            margin-top: 24px;
+            font-weight: bold;
+            font-size: 1.3rem;
+            background: #fef3e2;
+            display: inline-block;
+            width: auto;
+            padding: 8px 28px;
+            border-radius: 60px;
+            color: #4d2e1b;
+            box-shadow: inset 0 1px 4px #fff8, 0 5px 12px rgba(0,0,0,0.2);
+            backdrop-filter: blur(2px);
+            font-family: 'Segoe UI', 'Comic Neue', monospace;
+        }
+
+        .interaction-hint {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+            font-size: 0.85rem;
+            background: #2d221c80;
+            backdrop-filter: blur(4px);
+            border-radius: 100px;
+            padding: 6px 20px;
+            width: fit-content;
+            margin-left: auto;
+            margin-right: auto;
+            color: #fef0dd;
+            font-weight: 500;
+        }
+
+        .interaction-hint span {
+            background: #4a2e1e;
+            padding: 4px 12px;
+            border-radius: 30px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.8rem;
+        }
+
+        button {
+            background: #ffcf9a;
+            border: none;
+            font-size: 1.1rem;
+            padding: 5px 12px;
+            border-radius: 40px;
+            font-weight: bold;
+            color: #472713;
+            cursor: pointer;
+            transition: 0.1s linear;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+        }
+        button:active {
+            transform: scale(0.94);
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 0.7rem;
+            opacity: 0.8;
+            color: #fbe9cf;
+        }
+
+        @media (max-width: 550px) {
+            .scene {
+                padding: 20px 20px 30px 20px;
+            }
+            .caption {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+<div>
+    <div class="scene">
+        <canvas id="chairCanvas" width="800" height="550" style="width:100%; height:auto; max-width:800px; aspect-ratio:800/550"></canvas>
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 18px;">
+            <div class="caption">🍔 CHONKY BOY · RELAX MODE 🍕</div>
+            <div class="interaction-hint">
+                <span>🖱️ Click canvas → Jiggle belly!</span>
+                <span>🎉 Double-click → Happy dance!</span>
+            </div>
+        </div>
+        <footer>💺 "This chair? Absolute unit. Respect." 💺</footer>
+    </div>
+</div>
+
+<script>
+    (function(){
+        const canvas = document.getElementById('chairCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // dimensions (fixed logical 800x550)
+        const width = 800;
+        const height = 550;
+        canvas.width = width;
+        canvas.height = height;
+
+        // ---- animation & interaction states ----
+        let bellyJiggle = 0;        // 0 to 1, intensity, decays over time
+        let jiggleDecay = 0.92;
+        let jiggleActive = false;
+        let happyDance = 0;          // 0 -> 1 (dance factor)
+        let danceTimer = null;
+        let breathCycle = 0;         // subtle idle breathing
+        let lastTimestamp = 0;
+        let blinkState = 0;          // 0 = open, 1 = closing/half, 2 = closed
+        let blinkTimer = 0;
+        
+        // idle random blink every 2-4 secs
+        let nextBlinkDelay = 2000 + Math.random() * 3000;
+        let lastBlinkTime = performance.now();
+
+        // --- character dynamic offsets for jiggle & dance ---
+        // dance: body sway, arm wave, eyebrow wiggle
+        
+        function resetDanceAfterDelay(){
+            if(danceTimer) clearTimeout(danceTimer);
+            danceTimer = setTimeout(() => {
+                happyDance = 0;
+                danceTimer = null;
+            }, 800);
+        }
+        
+        // start happy dance on double-click
+        function triggerHappyDance(){
+            happyDance = 1.0;
+            resetDanceAfterDelay();
+        }
+        
+        // belly jiggle on click
+        function triggerJiggle(){
+            bellyJiggle = Math.min(1.0, bellyJiggle + 0.65);
+            jiggleActive = true;
+            // auto decay via animation frame
+        }
+        
+        // attach events
+        canvas.addEventListener('click', (e) => {
+            // avoid double-click also triggering single click double event? but it's fun: both work
+            triggerJiggle();
+        });
+        
+        canvas.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            triggerHappyDance();
+            triggerJiggle();   // extra fun: jiggle + dance
+        });
+        
+        // helper: map easeOut elastic / bounce for jiggle
+        function easeOutElastic(t) {
+            // t: 0..1, fast bounce
+            const c4 = (2 * Math.PI) / 3;
+            return t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+        }
+        
+        // dance sway: sinusoidal based on time
+        let dancePhase = 0;
+        let animationFrameId = null;
+        
+        // draw everything
+        function drawScene(nowMs){
+            // update dynamic timers
+            // 1) decay jiggle
+            if(bellyJiggle > 0.01){
+                bellyJiggle = bellyJiggle * jiggleDecay;
+                if(bellyJiggle < 0.01) bellyJiggle = 0;
+            } else {
+                bellyJiggle = 0;
+            }
+            
+            // 2) dance decay handled by timeout, but we also gradually reduce if needed
+            if(happyDance > 0 && !danceTimer){
+                happyDance = Math.max(0, happyDance - 0.02);
+            } else if (happyDance > 0 && danceTimer){
+                // during active dance, keep intensity but slight fade? no, it stays 1 for ~0.8s then drops
+                // but we enforce from trigger: happyDance = 1 and timer sets to 0. To avoid glitch, keep as is.
+            }
+            
+            // 3) idle breath (gentle sine)
+            breathCycle = (breathCycle + 0.012) % (Math.PI * 2);
+            const breathScale = 1 + Math.sin(breathCycle) * 0.008;   // subtle breathing motion (belly/body)
+            
+            // 4) dancePhase for wiggles
+            if(happyDance > 0.1){
+                dancePhase = (dancePhase + 0.25) % (Math.PI * 2);
+            } else {
+                dancePhase = dancePhase * 0.95;
+            }
+            
+            // 5) blink logic
+            const currentTime = nowMs;
+            if(blinkState === 0){
+                if(currentTime - lastBlinkTime > nextBlinkDelay){
+                    blinkState = 1;   // start blink closing
+                    blinkTimer = 0;
+                    lastBlinkTime = currentTime;
+                    nextBlinkDelay = 2000 + Math.random() * 4000;
+                }
+            } else if(blinkState === 1){
+                blinkTimer += 16; // approximate per frame, but we don't rely on delta perfectly: increment dynamic
+                if(blinkTimer > 80){
+                    blinkState = 2; // eyes closed
+                    blinkTimer = 0;
+                }
+            } else if(blinkState === 2){
+                blinkTimer += 16;
+                if(blinkTimer > 100){
+                    blinkState = 0; // reopen
+                    blinkTimer = 0;
+                }
+            }
+            
+            // jiggle intensity factor (non-linear fun)
+            let jiggleFactor = Math.min(1, bellyJiggle);
+            let jiggleWobble = jiggleFactor > 0 ? easeOutElastic(jiggleFactor) * jiggleFactor : 0;
+            // extra belly squash based on jiggle
+            const bellySquashX = 1 + jiggleWobble * 0.09;
+            const bellySquashY = 1 - jiggleWobble * 0.04;
+            const danceSwayX = Math.sin(dancePhase) * happyDance * 6;
+            const danceRotate = Math.sin(dancePhase * 2) * happyDance * 0.03;
+            
+            // Clear canvas with soft gradient floor
+            ctx.clearRect(0, 0, width, height);
+            
+            // ---- BACKGROUND: cozy room vibe ----
+            const gradFloor = ctx.createLinearGradient(0, height-120, 0, height);
+            gradFloor.addColorStop(0, '#e0bc8c');
+            gradFloor.addColorStop(1, '#c1925b');
+            ctx.fillStyle = gradFloor;
+            ctx.fillRect(0, height-100, width, 110);
+            // wood planks
+            ctx.fillStyle = '#b47c44';
+            for(let i=0;i<12;i++){
+                ctx.fillRect(20 + i*70, height-98, 38, 6);
+            }
+            // rug
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#bb7e4eaa';
+            ctx.beginPath();
+            ctx.ellipse(width/2+5, height-55, 150, 45, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#d49c6caa';
+            ctx.beginPath();
+            ctx.ellipse(width/2, height-58, 130, 38, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // --- CHAIR (wooden armchair) robust & sturdy---
+            ctx.save();
+            // chair base + cushions slightly below character
+            ctx.shadowColor = "rgba(0,0,0,0.2)";
+            ctx.shadowBlur = 8;
+            // seat base
+            ctx.fillStyle = '#8b5a2b';
+            ctx.beginPath();
+            ctx.rect(280, 290, 240, 48);
+            ctx.fill();
+            ctx.fillStyle = '#a56b32';
+            ctx.fillRect(285, 288, 230, 10);
+            // armrest left
+            ctx.fillStyle = '#7c4a21';
+            ctx.beginPath();
+            ctx.rect(260, 270, 35, 80);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.rect(505, 270, 35, 80);
+            ctx.fill();
+            // backrest
+            ctx.fillStyle = '#b47a3a';
+            ctx.beginPath();
+            ctx.rect(278, 210, 244, 85);
+            ctx.fill();
+            ctx.fillStyle = '#d6934b';
+            ctx.fillRect(285, 215, 230, 18);
+            // cushion pattern
+            ctx.fillStyle = '#c4813e';
+            for(let i=0;i<3;i++){
+                ctx.fillRect(300 + i*70, 245, 30, 8);
+            }
+            // chair legs
+            ctx.fillStyle = '#5a3a1a';
+            ctx.fillRect(295, 335, 18, 28);
+            ctx.fillRect(485, 335, 18, 28);
+            ctx.fillRect(340, 335, 18, 28);
+            ctx.fillRect(440, 335, 18, 28);
+            ctx.shadowBlur = 0;
+            
+            // ---- FAT GUY (mighty and glorious) ----
+            ctx.save();
+            // apply dance sway and slight body rotation (around pelvis)
+            const bodyAnchorX = width/2 + danceSwayX * 0.7;
+            const bodyAnchorY = 300;
+            ctx.translate(bodyAnchorX, bodyAnchorY);
+            if(danceRotate) ctx.rotate(danceRotate * 0.8);
+            
+            // Body (big round belly shape)
+            let bellyRadiusX = 100 * breathScale + (jiggleWobble * 9);
+            let bellyRadiusY = 98 * breathScale + (jiggleWobble * 6);
+            // apply squash based on jiggle
+            bellyRadiusX *= bellySquashX;
+            bellyRadiusY *= bellySquashY;
+            
+            ctx.fillStyle = '#f5cf9f';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.ellipse(0, 20, bellyRadiusX, bellyRadiusY, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#e6b46e';
+            ctx.beginPath();
+            ctx.ellipse(-12, 10, 28, 35, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(12, 10, 28, 35, 0, 0, Math.PI*2);
+            ctx.fill();
+            // chest fat rolls
+            ctx.fillStyle = '#e7bc83';
+            ctx.beginPath();
+            ctx.ellipse(0, -12, 86, 40, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Belly button + jiggle highlight
+            ctx.fillStyle = '#b87a44';
+            ctx.beginPath();
+            ctx.ellipse(0, 28 + (jiggleWobble*2), 12, 10, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#9c5f32';
+            ctx.beginPath();
+            ctx.ellipse(0, 28 + (jiggleWobble*1.5), 5, 6, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Arms (chubby)
+            ctx.fillStyle = '#f5cf9f';
+            // left arm raised slightly during dance
+            let leftArmAngle = -0.6 + Math.sin(dancePhase*3)*happyDance*0.4;
+            let rightArmAngle = -0.6 + Math.cos(dancePhase*2.3)*happyDance*0.4;
+            ctx.save();
+            ctx.translate(-48, -8);
+            ctx.rotate(leftArmAngle);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 28, 42, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#e2aa74';
+            ctx.beginPath();
+            ctx.ellipse(5, 12, 16, 22, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            
+            ctx.save();
+            ctx.translate(48, -8);
+            ctx.rotate(rightArmAngle);
+            ctx.beginPath();
+            ctx.ellipse(0, 0, 28, 42, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#e2aa74';
+            ctx.beginPath();
+            ctx.ellipse(-5, 12, 16, 22, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.restore();
+            
+            // Head (double chin glory)
+            ctx.fillStyle = '#f5cf9f';
+            ctx.beginPath();
+            ctx.ellipse(0, -52, 44, 48, 0, 0, Math.PI*2);
+            ctx.fill();
+            // double chin
+            ctx.fillStyle = '#e3aa73';
+            ctx.beginPath();
+            ctx.ellipse(0, -28, 36, 20, 0, 0, Math.PI*2);
+            ctx.fill();
+            // cheeks
+            ctx.fillStyle = '#f0bd85';
+            ctx.beginPath();
+            ctx.ellipse(-32, -48, 14, 17, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(32, -48, 14, 17, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Eyes (with blinking + happy dance eyebrows)
+            let eyeOpenRatio = 1;
+            if(blinkState === 1) eyeOpenRatio = 0.4;
+            if(blinkState === 2) eyeOpenRatio = 0.0;
+            // dance makes eyebrows wiggle
+            const browYoffset = Math.sin(dancePhase*6) * happyDance * 3;
+            // left eye
+            ctx.fillStyle = '#2f241b';
+            if(eyeOpenRatio > 0.1){
+                ctx.beginPath();
+                ctx.ellipse(-18, -60, 6, 8*eyeOpenRatio, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(-21, -63, 2, 0, Math.PI*2);
+                ctx.fill();
+            } else {
+                ctx.fillRect(-22, -63, 10, 4);
+            }
+            // right eye
+            ctx.fillStyle = '#2f241b';
+            if(eyeOpenRatio > 0.1){
+                ctx.beginPath();
+                ctx.ellipse(18, -60, 6, 8*eyeOpenRatio, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.beginPath();
+                ctx.arc(15, -63, 2, 0, Math.PI*2);
+                ctx.fill();
+            } else {
+                ctx.fillRect(12, -63, 10, 4);
+            }
+            
+            // Eyebrows (expressive)
+            ctx.fillStyle = '#4f321c';
+            ctx.beginPath();
+            ctx.ellipse(-24, -75 + browYoffset, 12, 5, -0.2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(24, -75 + browYoffset, 12, 5, 0.2, 0, Math.PI*2);
+            ctx.fill();
+            // Smile (happy content)
+            ctx.beginPath();
+            ctx.arc(0, -38, 22, 0.05, Math.PI - 0.05);
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#a24e1a';
+            ctx.stroke();
+            // red nose
+            ctx.fillStyle = '#e6875a';
+            ctx.beginPath();
+            ctx.ellipse(0, -44, 9, 7, 0, 0, Math.PI*2);
+            ctx.fill();
+            
+            // Hair (few strands)
+            ctx.fillStyle = '#5a3e2a';
+            ctx.beginPath();
+            ctx.ellipse(-14, -90, 20, 15, -0.2, 0, Math.PI*2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.ellipse(14, -90, 20, 15, 0.2, 0, Math.PI*2);
+            ctx.fill();
+            
+            ctx.restore(); // restore from body translate
+            
+            // ---- extra details: potato chips? can of soda? ----
+            ctx.fillStyle = '#c94f2c';
+            ctx.shadowBlur = 2;
+            ctx.beginPath();
+            ctx.ellipse(670, 470, 28, 18, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#f0b27a';
+            ctx.beginPath();
+            ctx.ellipse(667, 468, 16, 12, 0, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = '#6b3e1c';
+            ctx.font = "bold 22px 'Segoe UI'";
+            ctx.fillText("🍺", 660, 465);
+            // small snack
+            ctx.fillStyle = '#e0a46b';
+            ctx.beginPath();
+            ctx.ellipse(730, 480, 20, 14, 0.3, 0, Math.PI*2);
+            ctx.fill();
+            ctx.fillStyle = "#c28139";
+            ctx.fillText("🍔", 722, 483);
+            
+            // jiggle effect little 'boing' particles when jiggle active
+            if(jiggleWobble > 0.3){
+                ctx.fillStyle = "#ffd58c";
+                for(let i=0;i<6;i++){
+                    let angle = Date.now() + i;
+                    let xOff = Math.sin(angle)*jiggleWobble*12;
+                    let yOff = Math.cos(angle*1.3)*jiggleWobble*8;
+                    ctx.beginPath();
+                    ctx.arc(width/2 + xOff - 20 + i*7, 340 + yOff, 3, 0, Math.PI*2);
+                    ctx.fill();
+                }
+            }
+            
+            // dance sparkles if happy mode
+            if(happyDance > 0.5){
+                for(let i=0;i<8;i++){
+                    ctx.fillStyle = `hsl(${Date.now()/5 + i*40}, 80%, 65%)`;
+                    let sparkX = width/2 + Math.sin(dancePhase*5 + i)*20 - 30 + (i*8);
+                    let sparkY = 280 + Math.cos(dancePhase*4 + i)*15;
+                    ctx.beginPath();
+             
